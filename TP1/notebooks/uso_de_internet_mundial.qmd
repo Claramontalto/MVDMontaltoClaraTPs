@@ -1,0 +1,147 @@
+---
+title: "uso_de_internet_mundial"
+author: "Clara Montalto"
+format: html
+editor: visual
+---
+
+## Cargando datos
+
+-   [**Cargando librerias**]{.underline}:
+
+```{r}
+#install.packages("janitor") Primero tuve que instalar este paquete ya que no lo tenía.
+library(janitor) #janitor nos ayuda a normalizar los nombres.
+library(tidyverse) # tidyverse readr, dplyr, tidyr y stringr que nos van a ayudar a leer y manipular datos.
+```
+
+-   [**Lectura de los archivos CSV**]{.underline}:
+
+```{r}
+#Abrimos los datos de internet y los metadatos de países. En el dataframe de internet añadimos "skip = 4" ya que las primeras filas son info descriptiva. El nombre "raw" para dar en cuenta que este es el dataset en 'crudo' antes de ser manipulado.
+internet_raw <- read_csv("../data/internet_users_world_wide.csv", skip=4)
+metadata_raw <- read_csv("../data/metadata_countries_internet_users.csv")
+```
+
+-   [**Revisando la estructura de los datos:**]{.underline}
+
+```{r}
+head(uso_internet)
+head(paises)
+
+```
+
+## Normalización
+
+Normalizamos los nombres de las columnas para que podamos trabajar de forma más prolija. La función clean_names() pasa todo a minúsculas y cambia los espacios por \_.
+
+```{r}
+internet <- internet_raw %>%
+  clean_names()
+
+metadata <- metadata_raw %>%
+  clean_names()
+#Esto deja normbres transformados como de "Income Group" ---> "income_group". 
+
+```
+
+## Pivoteo (wide —\> long)
+
+Actualmente el dataset está en formato wide, donde c/año es una columna, pero c/variable debería ser una columna. Esto facilita la posterior manipulación de datos, queda mas ordenado y lógico: transformamos para que quede una columna que sea el año y otra que contenga los valores.
+
+```{r}
+internet <- internet %>%
+  pivot_longer(
+    cols = starts_with("x"), #porque los años de cada columna empiezan con "x"
+    names_to = "year", #a esos años los volvemos valores de  la columna "year"
+    values_to = "internet_users" #los valores debajo de las columnas cuando c/u era un año ahora se vuelvel las filas de la columna llamada internet_users.
+  )
+
+#Ahora por una cuestión de prolijidad limpiamos la variable "year" para eliminar las 'x' delante de cada año:
+
+internet <- internet %>%
+  mutate(
+    year = as.integer(str_remove(year, "x")))
+```
+
+##  Tratamiento de NAs
+
+En clase vimos que los datos reales casi siempre, si no siempre, tienen valores faltantes (NAs). Vimos que si no los tratamos no podemos calcular métricas válidas si el valor esta ausente. Entonces los removemos con la función "drop_na()".
+
+```{r}
+#priemro identificamos valores faltantes:
+sum(is.na(internet$internet_users))
+
+#Esto solo deja observaciones con datos válidos.
+internet <- internet %>%
+  drop_na(internet_users)
+```
+
+##  Cruce de datos (join)
+
+La tabla de indicadores solo tiene (relevante) paises, años e internet users, pero la hipótesis el TP compara grupos de ingresos y regiones y como esta información esta en metadata, hay que realizar un left join. La clave común entre ambas tablas es "country_code".
+
+Según lo que vimos en clase, en un left join se conservan todas las observaciones de la primera tabla y se agregan las columnas coincidentes de la segunda.
+
+```{r}
+internet_join <- internet %>%
+  left_join(metadata %>%
+              select(country_code, region, income_group),
+            by = "country_code")
+#luego del left join, podemos observar que algunas observaciones presentan valores faltanes en las variables de region e income group.Si nos metemos al dataframe de metadata podemos ver que es porque incluye agregados regionales y otras agrupaciones que no corresponden a paises individuales y entonces no tienen información completa. Y como la hipótesis del trabajo compara la evolución del uso de internet entre grupos de ingreso por región, estas avriables son clave y vamos a filtrar nuevamente NAs, para mantener filas que efectivamente puedan clasificarse correctamente dentro de los grupos de comparación.
+
+internet_join <- internet_join %>%
+  filter(!is.na(income_group))
+
+#chequeo que no queden NAs:
+sum(is.na(internet_join))
+```
+
+## Agregación
+
+Ahora vamos a usar funciones como "group_by" y "summarize" para calcular métricas necesraias por región y año. El dataframe tiene muchas filas pero necesitamos comparar grupos de ingresos, entonces podemos agregar datos para obtener métricas como el promedio por grupo de ingreso. Además es clave que nos interesa solo la decada 2013-2023.
+
+```{r}
+internet_hyp_decade <- internet_join %>%
+  filter(year >= 2013 & year <= 2023)
+
+#Ahora calculamos el promedio de uso de internet por año y grupo de ingreso, agrupando como la hipótesis:
+
+internet_metric <- internet_hyp_decade %>%
+  mutate(
+    income_category = case_when(
+      income_group %in% c("Low income", "Lower middle income") ~ "Low income group",
+      income_group %in% c("Upper middle income", "High income") ~ "High income group")) %>%
+  group_by(year, income_category) %>%
+  summarize(
+    mean_int_users = mean(internet_users, na.rm = TRUE),
+    .groups = "drop"
+  )
+#Para evaluar la hipótesis necesitamos la tasa de crecimiento porcentual entre 2013-2023 y necesitamos estos años en columnas:
+
+growth <- internet_metric %>%
+  filter(year %in% c(2013,2023)) %>%
+  pivot_wider(
+    names_from = year,
+    values_from = mean_int_users) 
+
+growth <- growth %>%
+  mutate(
+    growth_perc = ((`2023` - `2013`) / `2013`)*100) #usando backticks para referirnos a columnas con nombres numéricos sin que salte error.
+```
+
+## Factores
+
+Vamos a ordenar income_category ya que representa niveles jerárquicos de ingreso. Tenemos que hacer que R entienda que va de Low a High:
+
+```{r}
+growth <- growth %>%
+  mutate(
+    income_category = factor(
+      income_category,
+      levels = c(
+        "Low income group",
+        "High income group")))
+growth <- growth %>%
+  arrange(income_category) #lo ordenamos efectivamente en el orden jerárquico establecido.
+```
