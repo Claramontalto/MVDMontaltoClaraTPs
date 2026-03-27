@@ -26,8 +26,8 @@ metadata_raw <- read_csv("../data/metadata_countries_internet_users.csv")
 -   [**Revisando la estructura de los datos:**]{.underline}
 
 ```{r}
-head(uso_internet)
-head(paises)
+head(internet_raw)
+head(metadata_raw)
 
 ```
 
@@ -64,7 +64,7 @@ internet <- internet %>%
     year = as.integer(str_remove(year, "x")))
 ```
 
-##  Tratamiento de NAs
+## Tratamiento de NAs
 
 En clase vimos que los datos reales casi siempre, si no siempre, tienen valores faltantes (NAs). Vimos que si no los tratamos no podemos calcular métricas válidas si el valor esta ausente. Entonces los removemos con la función "drop_na()".
 
@@ -77,9 +77,9 @@ internet <- internet %>%
   drop_na(internet_users)
 ```
 
-##  Cruce de datos (join)
+## Cruce de datos (join)
 
-La tabla de indicadores solo tiene (relevante) paises, años e internet users, pero la hipótesis el TP compara grupos de ingresos y regiones y como esta información esta en metadata, hay que realizar un left join. La clave común entre ambas tablas es "country_code".
+La tabla de indicadores solo tiene (en cuanto a lo relevante) paises, años e internet users, pero la hipótesis el TP compara grupos de ingresos y regiones y como esta información esta en metadata, hay que realizar un left join. La clave común entre ambas tablas es "country_code".
 
 Según lo que vimos en clase, en un left join se conservan todas las observaciones de la primera tabla y se agregan las columnas coincidentes de la segunda.
 
@@ -99,7 +99,7 @@ sum(is.na(internet_join))
 
 ## Agregación
 
-Ahora vamos a usar funciones como "group_by" y "summarize" para calcular métricas necesraias por región y año. El dataframe tiene muchas filas pero necesitamos comparar grupos de ingresos, entonces podemos agregar datos para obtener métricas como el promedio por grupo de ingreso. Además es clave que nos interesa solo la decada 2013-2023.
+Ahora vamos a usar funciones como "group_by" y "summarize" para calcular métricas necesarias por región y año. El dataframe tiene muchas filas pero necesitamos comparar grupos de ingresos,  vamos a calcular el promedio del porcentaje de población que utiliza internet en los países pertenecientes a cada grupo de ingreso (agrupados en dos, como hace la hipótesis). A partir de esos valores se calcula la tasa de crecimiento porcentual del acceso a internet durante la década 2013-2023 y con eso justifica la hipótesis. Termina mostrando que los países de ingresos bajos experimentaron un crecimiento relativo mucho mayor en el acceso a internet aunque los países de ingresos más altos mantienen niveles mayores de penetración absoluta. La diferencia entre 2013 y 2023 mide el crecimiento de toda la década si bien no observa la trayectoria de crecimiento dentro del período.  
 
 ```{r}
 internet_hyp_decade <- internet_join %>%
@@ -117,17 +117,21 @@ internet_metric <- internet_hyp_decade %>%
     mean_int_users = mean(internet_users, na.rm = TRUE),
     .groups = "drop"
   )
+
 #Para evaluar la hipótesis necesitamos la tasa de crecimiento porcentual entre 2013-2023 y necesitamos estos años en columnas:
 
 growth <- internet_metric %>%
   filter(year %in% c(2013,2023)) %>%
-  pivot_wider(
+  pivot_wider( #lo pasé devuelta xq se me hacia más prolijo
     names_from = year,
-    values_from = mean_int_users) 
-
-growth <- growth %>%
+    values_from = mean_int_users
+    ) %>%
   mutate(
-    growth_perc = ((`2023` - `2013`) / `2013`)*100) #usando backticks para referirnos a columnas con nombres numéricos sin que salte error.
+    growth_perc = ((`2023` - `2013`) / `2013`)*100, #usando backticks para referirnos a columnas con nombres numéricos sin que salte error.
+indicator_desc = "C/año contiene el promedio del porcentaje de población que usa internet y luego se muestra la tasa de crecimiento de la década por grupo en growth_perc")
+
+print(growth)
+
 ```
 
 ## Factores
@@ -144,4 +148,12 @@ growth <- growth %>%
         "High income group")))
 growth <- growth %>%
   arrange(income_category) #lo ordenamos efectivamente en el orden jerárquico establecido.
+```
+
+## Entregable final
+
+Código para exportar archivo de la tabla final:
+
+```{r}
+write_csv(growth, "../output/resultado_hipotesis.csv")
 ```
