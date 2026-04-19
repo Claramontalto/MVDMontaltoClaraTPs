@@ -34,7 +34,7 @@ meses   <- 1:4
 anio    <- 2026
 base_url <- "https://www.oas.org/es/centro_noticias/comunicados_prensa.asp"
 
-# --- FUNCIÓN PARA OBTENER TÍTULOS Y LINKS DE UN MES --------------
+#FUNCIÓN PARA OBTENER TÍTULOS Y LINKS DE UN MES --------------
 
 # Definimos una función que dado un mes y año:
 # 1. Descarga la página de ese mes
@@ -85,21 +85,24 @@ obtener_cuerpo <- function(link) {
   return(cuerpo)}
 
 #EJECUTAR EL SCRAPING -------------------------------------
-
 # map_dfr() aplica la función a cada mes y une los resultados en una sola tabla.
 message("Iniciando scraping de todos los meses")
 tabla_links <- map_dfr(meses, ~ obtener_links_mes(.x, anio))
 message("Links obtenidos. Total de comunicados: ", nrow(tabla_links))
-# Agregamos el cuerpo de cada comunicado
-tabla_completa <- tabla_links |> 
-  mutate(
-    id     = row_number(),
-    cuerpo = map_chr(link, obtener_cuerpo)) |> 
+# Agregamos el cuerpo de cada comunicado usando un loop for
+# Creamos primero un vector vacío para guardar los cuerpos
+cuerpos <- c()
+for (link in tabla_links$link) {
+  cuerpo <- obtener_cuerpo(link)
+  cuerpos <- c(cuerpos, cuerpo)}
+# Armamos la tabla final con id, titulo y cuerpo
+tabla_completa <- tabla_links |>
+  mutate(id = row_number(),
+    cuerpo = cuerpos) |>
   select(id, titulo, cuerpo)
 message("Cuerpos obtenidos")
 
-#GUARDAR RESULTADO ----------------------------------------
-
-# saveRDS() guarda el objeto en formato .rds. Visto en scripting.html
+# GUARDAR RESULTADO ----------------------------------------
+# saveRDS() guarda el objeto en formato .rds. 
 saveRDS(tabla_completa, file.path(data_dir, "comunicados_oea.rds"))
 message("Tabla guardada en: ", file.path(data_dir, "comunicados_oea.rds"))
