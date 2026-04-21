@@ -1,6 +1,9 @@
-# ===========
-# Objetivo: limpiar, lematizar y remover stopwords del texto de los comunicados de prensa de la OEA
-# ===========
+# ------------------------------------------------------------
+# ------------------------------------------------------------
+# Voy a limpiar, lematizar y remover stopwords del texto de los 
+# comunicados de prensa de la OEA
+# ------------------------------------------------------------
+# ------------------------------------------------------------
 
 # LIBRERÍAS --------------------------------------------------
 # tidyverse: para manipular datos

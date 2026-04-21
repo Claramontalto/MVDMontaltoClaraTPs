@@ -1,6 +1,9 @@
-# ===========
-# Objetivo: scrapear los comunicados de prensa de la OEA para los meses de Enero, Febrero, Marzo y Abril de 2026
-# ===========
+# ------------------------------------------------------------
+# ------------------------------------------------------------
+# En este script voy a scrapear los comunicados de prensa de 
+# la OEA para los meses de Enero, Febrero, Marzo y Abril de 2026
+# ------------------------------------------------------------
+# ------------------------------------------------------------
 
 # LIBRERÍAS -----------------------------------------------
 # tidyverse: para manipular datos 
