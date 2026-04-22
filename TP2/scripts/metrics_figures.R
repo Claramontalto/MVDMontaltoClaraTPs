@@ -41,8 +41,11 @@ message("DTM creada")
 
 # FILTRAR 5 TÉRMINOS DE INTERÉS ------------------------------
 
-# Elegimos 5 términos relevantes para el contexto de la OEA
-terminos_de_interes <- c("democracia", "elección", "misión", "país", "región")
+# Elegimos 5 términos relevantes para el contexto de la OEA ---
+# por la pregunta que tengo en mente primero quiero saber que palabras más se repiten
+# comunicados_procesados |> count(lemma, sort = TRUE) |> head(20) #con este codigo vemos  linea elijo las primeras 5,
+# menos "oea", elegimos el top 5 de palabras que mas se repite:
+terminos_de_interes <- c("misión", "proceso", "organización", "derecho", "electoral")
 matriz_filtrada <- matriz_dtm[, colnames(matriz_dtm) %in% terminos_de_interes]
 message("Términos filtrados")
 
