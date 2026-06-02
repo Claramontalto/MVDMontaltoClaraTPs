@@ -1,0 +1,17 @@
+---
+title: "TP3: Regresión logística - Census Income USA"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    toc-title: "Contenidos"
+    theme: flatly
+    code-fold: true
+    embed-resources: true
+execute:
+  warning: false
+  message: false
+editor: visual
+---
+
+## 
