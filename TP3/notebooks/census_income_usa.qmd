@@ -14,4 +14,276 @@ execute:
 editor: visual
 ---
 
-## 
+## Preparación, carga y limpieza de datos
+
+-   En esta sección cargamos las librerías necesarias, cargamos el dataset y realizamos las transformaciones requeridas para el análisis.
+
+```{r}
+#| label: setup
+
+# Instalamos pacman si no está disponible en el entorno
+if (!require("pacman")) install.packages("pacman")
+
+# p_load() instala las librerías si no están y las carga
+# tidyverse: manipulación de datos y visualización con ggplot2
+# here: construye rutas relativas desde la raíz del proyecto
+# scales: formateo de ejes y etiquetas en gráficos
+# patchwork: composición de múltiples gráficos
+pacman::p_load(tidyverse, here, scales, patchwork)
+
+```
+
+Ahora, mas especificamente vamos a estar caragando el dataset utilizando la librerías "here" que construye rutas relativas desde la raíz del proyecto. Esto garantiza que el codigo sea reproducible en cualquier computadora.
+
+```{r}
+#| label: carga-datos
+
+# here() construye la ruta relativa desde la raíz del proyecto .Rproj
+datos_raw <- read_csv(here("TP3", "data", "adult_census_USA.csv"))
+
+# Primer vistazo a la estructura del dataset
+glimpse(datos_raw)
+```
+
+Seguimos con la transformación de la variable *income* en un factor con \<=50K como clase de referencia (primer nivel) y \>=50K como clase a predecir (segundo nivel). Esto es importante porque "glm()" va a modelar la probabilidad del segundo nivel, o sea la probabilidad de ganar más de \$50.000 anuales.
+
+```{r}
+#| label: transformacion-income
+
+# Convertimos income a factor con niveles explícitos
+# <=50K es el primer nivel (referencia) y >50K es la clase a predecir
+# Esto le indica a glm() qué probabilidad modelar
+datos_raw <- datos_raw |> 
+  mutate(income = factor(income, levels = c("<=50K", ">50K")),
+    # Creamos versión numérica: 0 para <=50K y 1 para >50K
+    income_num = ifelse(income == ">50K", 1, 0))
+
+# Verificamos los niveles del factor
+levels(datos_raw$income)
+```
+
+Para el último paso de esta sección, elegimos las variables relevantes para explicar *income* y aplicamos transformaciones de limpieza. Siguiendo la sugerencia de la consigna, simplificamos *marital_status* a dos categorías: "married" para quienes están casados y "single" para el resto.
+
+```{r}
+#| label: limpieza
+
+# Simplificamos y transformamos las variables categóricas
+# Guardamos el resultado en un nuevo objeto "datos" para no pisar datos_raw
+datos <- datos_raw |> 
+  mutate(
+    # Simplificamos marital_status a dos categorías
+    # "married" agrupa los dos tipos de matrimonio: civil y militar
+    # "single" agrupa divorciados, separados, viudos y nunca casados
+    marital_status = case_when(
+      marital_status %in% c("Married-civ-spouse", "Married-AF-spouse") ~ "married", TRUE ~ "single"),
+    marital_status = factor(marital_status, levels = c("single", "married")),
+    # Convertimos sex y workclass a factores para el modelo
+    sex = factor(sex),
+    workclass = factor(workclass)) |>
+  # Seleccionamos solo las variables relevantes para el análisis
+  select(income, income_num, age, education_num, marital_status, sex,
+         capital_gain, capital_loss, hours_per_week, workclass)
+# Verificamos la estructura final
+glimpse(datos)
+
+
+```
+
+Seleccionamos las siguientes variables como predictoras de *income*:
+
+-   *Age*: la edad es un proxy de experiencia laboral acumulada. A mayor edad, mayor probabilidad de haber alcanzado puestos mejor remunerados.
+
+-   *Education_num*: representa el nivel educativo como número. Mayor educación está asociada a mejores oportunidades laborales y salarios más altos.
+
+-   *Marital_status*: el estado civil puede reflejar diferencias en incentivos económicos y estabilidad laboral.
+
+-   *Sex*: existe una brecha salarial de género documentada en el mercado laboral estadounidense.
+
+-   *Capital_gain* y *capital_loss:* las ganancias y pérdidas de capital son típicamente más frecuentes en personas de ingresos altos que poseen activos financieros.
+
+-   *Hours_per_week*: trabajar más horas está directamente asociado a mayores ingresos.
+
+-   *Workclass*: el sector laboral (privado, público, independiente) influye en los niveles salariales.
+
+    Excluimos *occupation* (tiene muchísimas categorías (más de 10) y está muy correlacionada con education_num y workclass Incluirla complicaría el modelo sin agregar mucho), *relationship (*está muy correlacionada con el marital status y género, como por ejemplo "Husband" implica ser hombre y casado*), race* (es una variable sociodemográfica válida pero para este análisis nos enfocamos en factores laborales y educativos)y *native_country* (iene demasiadas categorías (más de 40 países) lo que haría el modelo muy difícil de interpretar) para mantener el modelo parsimonioso y enfocado en las variables sociodemográficas y laborales más relevantes.
+
+Rápidamente verificamos estén balanceados antes de modelar:
+
+```{r}
+#| label: balance
+
+# Distribución absoluta de la variable objetivo
+print(table(datos$income))
+# Proporciones
+print(prop.table(table(datos$income)) |> round(3))
+```
+
+El dataset está bien balanceado: 52.4% de observaciones pertenecen a la clase **\<=50K** y 47.6% a la clase **\>50K**. La diferencia es pequeña y no requiere técnicas adicionales como remuestreo o ajuste de pesos. Entonces podemos modelar directamente.
+
+## Análisis exploratorio y decisiones de transformación
+
+-   En esta sección exploramos visualmente las distribuciones de las variables predictoras en función de *income.* El objetivo es entender qué variables separan a los individuos de ingresos altos y bajos, y decidir si es necesario aplicar transformaciones o incluir términos de interacción antes de ajustar el modelo.
+
+La consigna pide visualizaciones bivariadas de las variables independientes vs. la variable objetivo. Vamos a hacer los gráficos de a uno para entender cada uno. Para esto primero vamos a definir una paleta de colores consistente para todos los gráficos.
+
+```{r}
+#| label: paleta
+
+# Definimos una paleta de colores consistente para todos los gráficos
+# Azul para ingresos bajos y rojo para ingresos altos
+paleta_income <- c("<=50K" = "#2166AC", ">50K" = "#B2182B")
+```
+
+Analizamos cómo se distribuyen las principales variables predictoras según el nivel de ingreso. Para las variables continuas usamos gráficos de densidad y violin + boxplot, que nos permiten ver la forma de la distribución de cada grupo. Para las variables categóricas usamos barras proporcionales. Estos gráficos nos van a ayudar a decidir si necesitamos aplicar transformaciones y si tiene sentido incluir términos de interacción en el modelo.
+
+Empezamos con **edad vs. income.**
+
+```{r}
+#| label: grafico-edad
+
+# Gráfico de densidad de edad según nivel de ingreso
+# geom_density() muestra la distribución continua de cada grupo
+# alpha controla la transparencia para ver ambas curvas superpuestas
+ggplot(datos, aes(x = age, fill = income, color = income)) +
+  geom_density(alpha = 0.5, linewidth = 0.8) +
+  scale_fill_manual(values = paleta_income, name = "Ingreso") +
+  scale_color_manual(values = paleta_income, name = "Ingreso") +
+  labs(title = "Distribución de Edad según Nivel de Ingreso",
+    x = "Edad (años)",
+    y = "Densidad") +
+  theme_minimal(base_size = 13)
+```
+
+-   La curva roja (\>50K\`\]) está desplazada hacia la derecha respecto a la azul (\<=50K). Esto indica que las personas con ingresos altos tienden a ser mayores, lo cual tiene sentido porque a mayor edad hay más experiencia laboral acumulada y mayor probabilidad de haber alcanzado puestos mejor remunerados.
+
+Seguimos con **horas semanales vs. income.**
+
+```{r}
+#| label: grafico-horas
+
+# Violin + boxplot para horas semanales según nivel de ingreso
+# geom_violin() muestra la forma de la distribución
+# geom_boxplot() muestra mediana y cuartiles
+ggplot(datos, aes(x = income, y = hours_per_week, fill = income)) +
+  geom_violin(alpha = 0.4, linewidth = 0.5) +
+  geom_boxplot(width = 0.2, alpha = 0.8, color = "gray20", outlier.shape = NA) +
+  scale_fill_manual(values = paleta_income, guide = "none") +
+  labs(title = "Horas Trabajadas por Semana según Nivel de Ingreso",
+    x = "Ingreso",
+    y = "Horas por semana") +
+  theme_minimal(base_size = 13)
+```
+
+-   Las personas con ingresos altos trabajan en promedio más horas por semana que las de ingresos bajos. La mediana del grupo está alrededor de 45 horas, mientras que la del grupo \<=50K está en 40 horas. Esto sugiere que hours_per_week es un predictor relevante para el modelo.
+
+Ahora el gráfico de **capital_gain vs. income.**
+
+```{r}
+#| label: grafico-capital
+
+# Violin + boxplot para capital_gain según nivel de ingreso
+# Usamos scale_y_log10() para ver mejor la distribución
+# ya que la mayoría de valores son 0 y hay algunos muy altos
+ggplot(datos |> filter(capital_gain > 0), 
+       aes(x = income, y = capital_gain, fill = income)) +
+  geom_violin(alpha = 0.4, linewidth = 0.5) +
+  geom_boxplot(width = 0.2, alpha = 0.8, color = "gray20", outlier.shape = NA) +
+  scale_fill_manual(values = paleta_income, guide = "none") +
+  scale_y_log10(labels = label_dollar()) +
+  labs(title = "Capital Gain según Nivel de Ingreso (escala logarítmica)",
+    subtitle = "Solo se muestran observaciones con capital_gain > 0",
+    x = "Ingreso",
+    y = "Capital Gain (USD)") +
+  theme_minimal(base_size = 13)
+```
+
+-   Entre quienes declaran ganancias de capital positivas, los valores son notoriamente más altos para el grupo \>50K. Además, la distribución es muy asimétrica hacia la derecha, hay muchos valores cercanos a cero y algunos extremadamente altos. Esto justifica aplicar una transformación logarítmica con l**og1p()** en el modelo. Usamos log1p(x) en lugar de log(x) porque muchas observaciones tienen capital_gain = 0 y log(0) es indefinido, mientras que log1p(0) = 0.
+
+**Nivel educativo vs. Income.**
+
+```{r}
+#| label: grafico-educacion
+
+# Barras proporcionales de income según nivel educativo
+# position = "fill" muestra proporciones en vez de conteos
+# así podemos comparar grupos de distinto tamaño
+ggplot(datos, aes(x = education_num, fill = income)) +
+  geom_bar(position = "fill", alpha = 0.85, color = "white") +
+  scale_fill_manual(values = paleta_income, name = "Ingreso") +
+  scale_y_continuous(labels = label_percent()) +
+  labs(title = "Proporción de Ingresos según Nivel Educativo",
+    x = "Años de educación",
+    y = "Proporción") +
+  theme_minimal(base_size = 13) +
+  theme(panel.grid.major.x = element_blank())
+```
+
+-   Podemos observar una gradiente clara, donde a mayor cantidad de años de educación, mayor proporción de individuos con ingresos altos. Con menos de 9 años de educación casi nadie supera los 50k anuales. Mientras que con 16 años (nivel universitario completo o posgrado) mas del 75% pertenece al grupo de ingresos altos.
+
+**Estado civil vs. income.**
+
+```{r}
+#| label: grafico-estado-civil
+
+# Barras proporcionales de income según estado civil
+# position = "fill" muestra proporciones para comparar los dos grupos
+ggplot(datos, aes(x = marital_status, fill = income)) +
+  geom_bar(position = "fill", alpha = 0.85, color = "white") +
+  scale_fill_manual(values = paleta_income, name = "Ingreso") +
+  scale_y_continuous(labels = label_percent()) +
+  labs(
+    title = "Proporción de Ingresos según Estado Civil",
+    x = "Estado Civil",
+    y = "Proporción") +
+  theme_minimal(base_size = 13) +
+  theme(panel.grid.major.x = element_blank())
+```
+
+-   Aca podemos ver una diferencia muy marcada. Entre las personas casadas, casi el 70% tiene ingresos altos, mientras que entre las solteras, esa proporción baja a menos del 20%. Esto convierte a marital status en uno de los predictores mas fuertes.
+
+**Sexo vs. income.**
+
+```{r}
+#| label: grafico-sexo
+
+# Barras proporcionales de income según sexo
+ggplot(datos, aes(x = sex, fill = income)) +
+  geom_bar(position = "fill", alpha = 0.85, color = "white") +
+  scale_fill_manual(values = paleta_income, name = "Ingreso") +
+  scale_y_continuous(labels = label_percent()) +
+  labs(title = "Proporción de Ingresos según Sexo",
+    x = "Sexo",
+    y = "Proporción") +
+  theme_minimal(base_size = 13) +
+  theme(panel.grid.major.x = element_blank())
+```
+
+-   La brecha que observamos es muy clara,los hombres tienen una proporción de ingresos altos de casi el 60% mientras que para las mujeras esa proporción llega apenas por sobre el 25% si miramos cerca. Esto nos lleva a preguntarnos si ademas esta brecha es uniforme en todos los niveles educativos, lo que para el siguiente grafico justifica proponer el término de interacción entre sex y education_num:
+
+**Interacción:** La hipótesis es que la brecha salarial de género no es uniforme en todos los niveles educativos: el efecto de tener más educación sobre la probabilidad de ingresos altos podría ser distinto para hombres y mujeres.
+
+```{r}
+#| label: grafico-interaccion
+
+# Gráfico facetado por sexo para ver si el efecto de la educación
+# sobre income es distinto para hombres y mujeres
+ggplot(datos, aes(x = education_num, fill = income)) +
+  geom_bar(position = "fill", alpha = 0.85, color = "white") +
+  facet_wrap(~ sex) +
+  scale_fill_manual(values = paleta_income, name = "Ingreso") +
+  scale_y_continuous(labels = label_percent()) +
+  labs(title = "Proporción de Ingresos según Educación, separado por Sexo",
+    subtitle = "¿Cambia el efecto de la educación según el sexo?",
+    x = "Años de educación",
+    y = "Proporción") +
+  theme_minimal(base_size = 13) +
+  theme(panel.grid.major.x = element_blank())
+```
+
+-   El gráfico confirma la hipótesis: el efecto de la educación sobre los ingresos altos es distinto para hombres y mujeres. En los hombres, la proporción de \>50K empieza a crecer notoriamente a partir de los 10 años de educación. En las mujeres, el crecimiento es más tardío y menos pronunciado, donde incluso con 13 años de educación (nivel universitario) la proporción de ingresos altos no supera el 50%, mientras que en los hombres ya supera el 50% con menos años. Esta asimetría en la pendiente es exactamente lo que un término de interacción education_num:sex captura.
+
+No incluimos visualizaciones bivariadas *para capital_loss* ni *workclass* por las siguientes razones:
+
+1.  capital_loss: tiene una distribución muy similar a capital_gain, la gran mayoría de observaciones tiene valor 0 y hay pocos valores extremos altos. La misma justificación para aplicar log1p() aplica en ambos casos.
+
+2.  workclass: tiene muchas categorías (7 en total) lo que haría el gráfico muy difícil de leer. Su efecto sobre income lo analizamos directamente en el modelo a través de los coeficientes.
