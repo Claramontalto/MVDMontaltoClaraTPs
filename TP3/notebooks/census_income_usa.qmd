@@ -327,7 +327,7 @@ Este modelo agrega el término de interacción entre education_num y sex que jus
 #| label: modelo-interaccion
 
 # Agregamos el término de interacción education_num * sex
-# El operador * incluye automáticamente los efectos principales y el término de interacción education_num:sex
+# El "*" incluye automáticamente los efectos principales y el término de interacción education_num:sex
 modelo_int <- glm(income ~ age + education_num * sex + marital_status + log1p(capital_gain) + log1p(capital_loss) + hours_per_week + workclass,
   family = "binomial",
   data   = datos)
@@ -376,3 +376,72 @@ ame |> as_tibble() |>
 Los efectos marginales más destacados del Modelo 2 son: marital_status, es el predictor más fuerte. Estar casado/a aumenta en promedio 38.8 puntos porcentuales la probabilidad de tener ingresos altos respecto a estar soltero/a. education_num muestra que cada año adicional de educación aumenta en promedio 5.1 puntos porcentuales la probabilidad de ingresos altos. workclass (Federal-gov vs. Private) que trabajar en el gobierno federal aumenta en promedio 7.9 puntos porcentuales la probabilidad respecto al sector privado. sex demuestra que ser hombre aumenta en promedio 2.2 puntos porcentuales la probabilidad de ingresos altos. Y, por ultimo, age y hours_per_week, efectos pequeños pero significativos de 0.47 y 0.46 puntos porcentuales respectivamente. En cambio los otros dos tipos de workclass restantes no los mencionamos porque su p-valor es mayor a 0.05, lo q quiere decir que no son significativos y no podemos afirmar con confianza que sean distintos de cero.
 
 **Forest Plot**
+
+graficamos los Odds Ratios con barras de error graduadas a tres niveles de confianza (80%, 95% y 99%), tal como vimos en clase. Usamos escala logarítmica en el eje X porque es la escala natural de los OR así la distancia entre 0.5 y 1 es visualmente igual a la distancia entre 1 y 2.
+
+```{r}
+#| label: forest-plot
+# broom::tidy() convierte el modelo en un dataframe
+# Calculamos los IC a tres niveles manualmente con qnorm()
+df_or <- broom::tidy(modelo_int) |>
+  filter(!term %in% c("(Intercept)", "workclassWithout-pay")) |>
+  mutate(lo_80 = estimate - qnorm(0.90) * std.error,
+    hi_80 = estimate + qnorm(0.90) * std.error,
+    lo_95 = estimate - qnorm(0.975) * std.error,
+    hi_95 = estimate + qnorm(0.975) * std.error,
+    lo_99 = estimate - qnorm(0.995) * std.error,
+    hi_99 = estimate + qnorm(0.995) * std.error,
+    across(c(estimate, starts_with("lo_"), starts_with("hi_")), exp))
+
+ggplot(df_or, aes(y = reorder(term, estimate), x = estimate)) +
+  geom_vline(xintercept = 1, linetype = "dashed", color = "gray40") +
+  geom_linerange(aes(xmin = lo_99, xmax = hi_99), color = "#74ADD1", linewidth = 1.2) +
+  geom_linerange(aes(xmin = lo_95, xmax = hi_95), color = "#4575B4", linewidth = 3) +
+  geom_linerange(aes(xmin = lo_80, xmax = hi_80), color = "#313695", linewidth = 5.5) +
+  geom_point(color = "#D73027", size = 3) +
+  scale_x_log10() +
+  labs(title = "Odds Ratios — Modelo con Interacción",
+    subtitle = "Barras graduadas: 80% (gruesa), 95% (media), 99% (fina)",
+    x = "Odds Ratio (escala logarítmica)",
+    y = NULL,
+    caption = "Si la barra cruza la línea punteada (OR = 1), el efecto no es significativo.") +
+  theme_minimal(base_size = 12) +
+  theme(plot.title = element_text(face = "bold"),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_blank())
+```
+
+El gráfico terminó mostrando de forma clara qué variables tienen efectos isgnificativos, donde marital_statusmarried es el predictor mas fuerte. Su OR está muy por encima de 1y sus barras no cruzan la línea punteada en ningún nivel de confianza. workclass para federal gov y self employed inctambiên aumenta las chances de ingresos altos respecto del sector privado. La de self-emp-not-inc duce las chances OR\<1. Por último, education_num, log1p(capital_gain), log1p(capital_loss), age y hours_per_week son significativos pero sus OR están cercanos a 1 porque el efecto de una unidad adicional es pequeño. Aunque acumulado es relevante. sexmale muestra incertidumbre ya que sus barras cruzan la línea al 99%, lo que indica que es marginalmente significativo. Finalmente, workclasslocalgov, workclassstate-gov y education_num:sexmale cruzan la línea punteada en todos los niveles, confirmando que no son significativos.
+
+## Comparación global de modelos
+
+Comparamos el Modelo 1 (sin interacción) y el Modelo 2 (con interacción) usando broom::glance(), que extrae las métricas globales de cada modelo. Calculamos también el Pseudo-R², que es la métrica de bondad de ajuste vista en clase para modelos logísticos.
+
+Se calcula como: 1 - (deviance residual / deviance nula)
+
+```{r}
+#| label: comparacion-modelos
+
+# broom::glance() extrae las métricas globales de cada modelo
+metricas_base <- broom::glance(modelo_base) |>
+  mutate(modelo = "Modelo 1 (Base)")
+metricas_int <- broom::glance(modelo_int) |>
+  mutate(modelo = "Modelo 2 (Interacción)")
+# Combinamos y calculamos el Pseudo-R² 
+# Fórmula vista: 1 - (deviance residual / deviance nula)
+bind_rows(metricas_base, metricas_int) |>
+  mutate(pseudo_r2 = round(1 - deviance / null.deviance, 4)) |>
+  select(modelo, AIC, BIC, deviance, null.deviance, pseudo_r2) |>
+  rename("Modelo" = modelo,
+    "AIC" = AIC,
+    "BIC" = BIC,
+    "Deviance" = deviance,
+    "Deviance Nula" = null.deviance,
+    "Pseudo-R²" = pseudo_r2) |>
+  knitr::kable(digits = 2, caption = "Comparación de Modelos") |>
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+    full_width = FALSE,
+    position = "center")
+```
+
+Ambos modelos tienen un Pseudo R² de 0.39, lo que indica que explican el 39% de la varianza en la variable dependiente. Respecto al AIC, el Modelo 1 tiene un AIC ligeramente menor (13261.10 vs 13261.97). Como regla práctica vista en clase, cuando la diferencia entre dos modelos es menor a 10 puntos de AIC, no hay razón suficiente para preferir el modelo más complejo. En este caso la diferencia es prácticamente nula, por lo que la inclusión de la interacción no mejora el modelo de forma significante. Esto es consistente con lo que observamos en la sección 2 del tp ,donde el término de interacción no resultó significativo.
