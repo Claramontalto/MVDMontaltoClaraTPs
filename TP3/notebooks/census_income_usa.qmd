@@ -48,7 +48,7 @@ datos_raw <- read_csv(here("TP3", "data", "adult_census_USA.csv"))
 glimpse(datos_raw)
 ```
 
-Seguimos con la transformación de la variable *income* en un factor con \<=50K como clase de referencia (primer nivel) y \>=50K como clase a predecir (segundo nivel). Esto es importante porque "glm()" va a modelar la probabilidad del segundo nivel, o sea la probabilidad de ganar más de \$50.000 anuales.
+Seguimos con la transformación de la variable *income* en un factor con \<=50K como clase de referencia (primer nivel) y \>=50K como clase a predecir (segundo nivel). Esto es importante porque "glm()" va a modelar la probabilidad del segundo nivel, o sea la probabilidad de ganar más de \$50.000 anuales.
 
 ```{r}
 #| label: transformacion-income
@@ -108,7 +108,7 @@ Seleccionamos las siguientes variables como predictoras de *income*:
 
 -   *Workclass*: el sector laboral (privado, público, independiente) influye en los niveles salariales.
 
-    Excluimos *occupation* (tiene muchísimas categorías y está muy correlacionada con education_num y workclass ), *relationship (*está muy correlacionada con el marital status y género, como por ejemplo "Husband" implica ser hombre y casado*), race* (es una variable sociodemográfica válida pero para este análisis nos enfocamos en factores laborales y educativos)y *native_country* (iene demasiadas categorías lo que haría el modelo muy difícil de interpretar) para mantener el modelo parsimonioso y enfocado en las variables sociodemográficas y laborales más relevantes.
+    Excluimos *occupation* (tiene muchísimas categorías y está muy correlacionada con education_num y workclass ), *relationship (*está muy correlacionada con el marital status y género, como por ejemplo "Husband" implica ser hombre y casado*), race* (es una variable sociodemográfica válida pero para este análisis nos enfocamos en factores laborales y educativos) y *native_country* (iene demasiadas categorías lo que haría el modelo muy difícil de interpretar) para mantener el modelo parsimonioso y enfocado en las variables sociodemográficas y laborales más relevantes.
 
 Rápidamente verificamos estén balanceados antes de modelar:
 
@@ -121,11 +121,11 @@ print(table(datos$income))
 print(prop.table(table(datos$income)) |> round(3))
 ```
 
-El dataset está bien balanceado: 52.4% de observaciones pertenecen a la clase **\<=50K** y 47.6% a la clase **\>50K**. La diferencia es pequeña y no requiere técnicas adicionales como remuestreo o ajuste de pesos. Entonces podemos modelar directamente.
+El dataset está bien balanceado, 52.4% de observaciones pertenecen a la clase **\<=50K** y 47.6% a la clase **\>50K**. La diferencia es pequeña y no requiere técnicas adicionales como remuestreo o ajuste de pesos. Entonces podemos modelar directamente.
 
 ## Análisis exploratorio y decisiones de transformación
 
--   En esta sección exploramos visualmente las distribuciones de las variables predictoras en función de *income.* El objetivo es entender qué variables separan a los individuos de ingresos altos y bajos, y decidir si es necesario aplicar transformaciones o incluir términos de interacción antes de ajustar el modelo.
+-   En esta sección exploramos visualmente las distribuciones de las variables predictoras en función de *income.* El objetivo es entender qué variables separan a los individuos de ingresos altos y bajos, y decidir si es necesario aplicar transformaciones o incluir términos de interacción antes de ajustar el modelo.
 
 La consigna pide visualizaciones bivariadas de las variables independientes vs. la variable objetivo. Vamos a hacer los gráficos de a uno para entender cada uno. Para esto primero vamos a definir una paleta de colores consistente para todos los gráficos.
 
@@ -199,7 +199,7 @@ ggplot(datos |> filter(capital_gain > 0),
   theme_minimal(base_size = 13)
 ```
 
--   Entre quienes declaran ganancias de capital positivas, los valores son notoriamente más altos para el grupo \>50K. Además, la distribución es muy asimétrica hacia la derecha, hay muchos valores cercanos a cero y algunos extremadamente altos. Esto justifica aplicar una transformación logarítmica con l**og1p()** en el modelo. Usamos log1p(x) en lugar de log(x) porque muchas observaciones tienen capital_gain = 0 y log(0) es indefinido, mientras que log1p(0) = 0.
+-   Entre quienes declaran ganancias de capital positivas, los valores son más altos para el grupo \>50K. Además, la distribución es muy asimétrica hacia la derecha, hay muchos valores cercanos a cero y algunos extremadamente altos. Esto justifica aplicar una transformación logarítmica con l**og1p()** en el modelo. Usamos **log1p(x)** en lugar de log(x) porque muchas observaciones tienen capital_gain = 0 y log(0) es indefinido, mientras que log1p(0) = 0.
 
 **Nivel educativo vs. Income.**
 
@@ -317,7 +317,7 @@ modelo_base <- glm(income ~ age + education_num + marital_status + sex +
 summary(modelo_base)
 ```
 
-Todos los predictores son significativos excepto workclassLocal-gov, workclassState-gov y workclassWithout-pay. Los coeficientes están en escala de log-odds, lo que los hace difíciles de interpretar directamente.. Algunos resultados preliminares destacados incluyen: marital_statusmarried tiene el coeficiente más alto (2.40), confirmando lo que vimos en el EDA. education_num y log1p(capital_gain) también son muy significativos. sexMalees significativo pero con un coeficiente más chico.
+Todos los predictores son significativos excepto workclasslocal-gov, workclassstate-gov y workclasswithout-pay. Los coeficientes están en escala de log-odds, lo que los hace difíciles de interpretar directamente.. Algunos resultados preliminares destacados incluyen: marital_statusmarried tiene el coeficiente más alto (2.40), confirmando lo que vimos en el EDA. education_num y log1p(capital_gain) también son muy significativos. sexMales significativo pero con un coeficiente más chico.
 
 ***Modelo 2:*** con interacción (education_num x sex)
 
@@ -411,7 +411,7 @@ ggplot(df_or, aes(y = reorder(term, estimate), x = estimate)) +
     panel.grid.minor = element_blank())
 ```
 
-El gráfico terminó mostrando de forma clara qué variables tienen efectos isgnificativos, donde marital_statusmarried es el predictor mas fuerte. Su OR está muy por encima de 1y sus barras no cruzan la línea punteada en ningún nivel de confianza. workclass para federal gov y self employed inctambiên aumenta las chances de ingresos altos respecto del sector privado. La de self-emp-not-inc duce las chances OR\<1. Por último, education_num, log1p(capital_gain), log1p(capital_loss), age y hours_per_week son significativos pero sus OR están cercanos a 1 porque el efecto de una unidad adicional es pequeño. Aunque acumulado es relevante. sexmale muestra incertidumbre ya que sus barras cruzan la línea al 99%, lo que indica que es marginalmente significativo. Finalmente, workclasslocalgov, workclassstate-gov y education_num:sexmale cruzan la línea punteada en todos los niveles, confirmando que no son significativos.
+El gráfico terminó mostrando de forma clara qué variables tienen efectos significativos, donde marital_statusmarried es el predictor mas fuerte. Su OR está muy por encima de 1y sus barras no cruzan la línea punteada en ningún nivel de confianza. workclass para federal gov y self employed inctambiên aumenta las chances de ingresos altos respecto del sector privado. La de self-emp-not-inc reduce las chances OR\<1. Por último, education_num, log1p(capital_gain), log1p(capital_loss), age y hours_per_week son significativos pero sus OR están cercanos a 1 porque el efecto de una unidad adicional es pequeño. Aunque acumulado es relevante. sexmale muestra incertidumbre ya que sus barras cruzan la línea al 99%, lo que indica que es marginalmente significativo. Finalmente, workclasslocalgov, workclassstate-gov y education_num:sexmale cruzan la línea punteada en todos los niveles, confirmando que no son significativos.
 
 ## Comparación global de modelos
 
@@ -444,4 +444,4 @@ bind_rows(metricas_base, metricas_int) |>
     position = "center")
 ```
 
-Ambos modelos tienen un Pseudo R² de 0.39, lo que indica que explican el 39% de la varianza en la variable dependiente. Respecto al AIC, el Modelo 1 tiene un AIC ligeramente menor (13261.10 vs 13261.97). Como regla práctica vista en clase, cuando la diferencia entre dos modelos es menor a 10 puntos de AIC, no hay razón suficiente para preferir el modelo más complejo. En este caso la diferencia es prácticamente nula, por lo que la inclusión de la interacción no mejora el modelo de forma significante. Esto es consistente con lo que observamos en la sección 2 del tp ,donde el término de interacción no resultó significativo.
+Ambos modelos tienen un Pseudo R² de 0.39, lo que indica que explican el 39% de la varianza en la variable dependiente. Respecto al AIC, el Modelo 1 tiene un AIC ligeramente menor (13261.10 vs 13261.97). Como regla práctica vista en clase, cuando la diferencia entre dos modelos es menor a 10 puntos de AIC, no hay razón suficiente para preferir el modelo más complejo. En este caso la diferencia es prácticamente nula, por lo que la inclusión de la interacción no mejora el modelo de forma "meaningful", por no seguir repitiendo significativo. Esto es consistente con lo que observamos en la sección 2 del tp ,donde el término de interacción no resultó significativo.
