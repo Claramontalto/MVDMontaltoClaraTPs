@@ -29,14 +29,17 @@ if (!require("pacman")) install.packages("pacman")
 # here: construye rutas relativas desde la raíz del proyecto
 # scales: formateo de ejes y etiquetas en gráficos
 # patchwork: composición de múltiples gráficos
-pacman::p_load(tidyverse, here, scales, patchwork)
+# broom: convertir modelos en dataframes (tidy, glance)
+# marginaleffects: cálculo de efectos marginales promedio
+# kableExtra: decoración de tablas
+pacman::p_load(tidyverse, here, scales, patchwork, broom, marginaleffects, kableExtra)
 
 ```
 
 Ahora, mas especificamente vamos a estar caragando el dataset utilizando la librerías "here" que construye rutas relativas desde la raíz del proyecto. Esto garantiza que el codigo sea reproducible en cualquier computadora.
 
 ```{r}
-#| label: carga datos
+#| label: carga-datos
 
 # here() construye la ruta relativa desde la raíz del proyecto .Rproj
 datos_raw <- read_csv(here("TP3", "data", "adult_census_USA.csv"))
@@ -48,7 +51,7 @@ glimpse(datos_raw)
 Seguimos con la transformación de la variable *income* en un factor con \<=50K como clase de referencia (primer nivel) y \>=50K como clase a predecir (segundo nivel). Esto es importante porque "glm()" va a modelar la probabilidad del segundo nivel, o sea la probabilidad de ganar más de \$50.000 anuales.
 
 ```{r}
-#| label: transformacion income
+#| label: transformacion-income
 
 # Convertimos income a factor con niveles explícitos
 # <=50K es el primer nivel (referencia) y >50K es la clase a predecir
@@ -82,6 +85,7 @@ datos <- datos_raw |>
   # Seleccionamos solo las variables relevantes para el análisis
   select(income, income_num, age, education_num, marital_status, sex,
          capital_gain, capital_loss, hours_per_week, workclass)
+
 # Verificamos la estructura final
 glimpse(datos)
 
@@ -138,7 +142,7 @@ Analizamos cómo se distribuyen las principales variables predictoras según el 
 Empezamos con **edad vs. income.**
 
 ```{r}
-#| label: grafico edad
+#| label: grafico-edad
 
 # Gráfico de densidad de edad según nivel de ingreso
 # geom_density() muestra la distribución continua de cada grupo
@@ -158,7 +162,7 @@ ggplot(datos, aes(x = age, fill = income, color = income)) +
 Seguimos con **horas semanales vs. income.**
 
 ```{r}
-#| label: grafico horas
+#| label: grafico-horas
 
 # Violin + boxplot para horas semanales según nivel de ingreso
 # geom_violin() muestra la forma de la distribución
@@ -178,7 +182,7 @@ ggplot(datos, aes(x = income, y = hours_per_week, fill = income)) +
 Ahora el gráfico de **capital_gain vs. income.**
 
 ```{r}
-#| label: grafico capital
+#| label: grafico-capital
 
 # Violin + boxplot para capital_gain según nivel de ingreso
 # Usamos scale_y_log10() para ver mejor la distribución ya que la mayoría de valores son 0 y hay algunos muy altos
@@ -200,7 +204,7 @@ ggplot(datos |> filter(capital_gain > 0),
 **Nivel educativo vs. Income.**
 
 ```{r}
-#| label: grafico educacion
+#| label: grafico-educacion
 
 # Barras proporcionales de income según nivel educativo
 # position = "fill" muestra proporciones en vez de conteos
@@ -221,7 +225,7 @@ ggplot(datos, aes(x = education_num, fill = income)) +
 **Estado civil vs. income.**
 
 ```{r}
-#| label: grafico estado civil
+#| label: grafico-estado-civil
 
 # Barras proporcionales de income según estado civil
 # position = "fill" muestra proporciones para comparar los dos grupos
@@ -242,7 +246,7 @@ ggplot(datos, aes(x = marital_status, fill = income)) +
 **Sexo vs. income.**
 
 ```{r}
-#| label: grafico sexo
+#| label: grafico-sexo
 
 # Barras proporcionales de income según sexo
 ggplot(datos, aes(x = sex, fill = income)) +
@@ -261,7 +265,7 @@ ggplot(datos, aes(x = sex, fill = income)) +
 **Interacción:** La hipótesis es que la brecha salarial de género no es uniforme en todos los niveles educativos: el efecto de tener más educación sobre la probabilidad de ingresos altos podría ser distinto para hombres y mujeres.
 
 ```{r}
-#| label: grafico interaccion
+#| label: grafico-interaccion
 
 # Gráfico facetado por sexo para ver si el efecto de la educación
 # sobre income es distinto para hombres y mujeres
@@ -301,7 +305,7 @@ Las variables de referencia para los predictores categóricos son:
 -   workclass: Private. medimos el efecto de trabajar en otros sectores.
 
 ```{r}
-#| label: modelo base
+#| label: modelo-base
 
 # glm() ajusta modelos lineales generalizados
 # family = "binomial" indica que usamos la función de enlace logit para una variable dependiente dicotómica
@@ -320,7 +324,7 @@ Todos los predictores son significativos excepto workclassLocal-gov, workclassSt
 Este modelo agrega el término de interacción entre education_num y sex que justificamos visualmente en la sección anterior. En R, education_num \* sex incluye automáticamente los dos efectos principales y el término de interacción education_num:sex.
 
 ```{r}
-#| label: modelo interaccion
+#| label: modelo-interaccion
 
 # Agregamos el término de interacción education_num * sex
 # El operador * incluye automáticamente los efectos principales y el término de interacción education_num:sex
@@ -332,3 +336,43 @@ summary(modelo_int)
 ```
 
 El término de interacción no resultó estadísticamente significativo (p = 0.285). Como vimos, esto significa que la interacción no es estadísticamente distinguible de cero en este dataset.
+
+## Interpretación de resultados y efectos marginales
+
+-   Los coeficientes del modelo logístico están en escala de log-odds, que son difíciles de interpretar directamente. Existen dos formas de traducirlos a métricas más intuitivas, tal como vimos en clase:
+
+    -   Odds Ratios: aplicando la función exponencial a los coeficientes. Un OR \> 1 significa que la variable aumenta las chances del evento, un OR \< 1 las reduce.
+
+    -   Efectos Marginales Promedio (AME): el cambio promedio en probabilidad (en puntos porcentuales) ante un cambio unitario en la variable predictora.
+
+**AME**
+
+Usamos avg_slopes() de "marginaleffects" para calcular el efecto promedio de cada variable sobre la probabilidad de ingresos altos. El AME responde a la pregunta: En promedio, si aumento X en una unidad, en cuántos puntos porcentuales cambia la probabilidad de ganar más de \$50K?
+
+```{r}
+#| label: ame
+
+# avg_slopes() calcula el efecto marginal promedio para cada variable
+# slope = "dydx" calcula el cambio en probabilidad ante un cambio unitario
+ame <- avg_slopes(modelo_int)
+ame |> as_tibble() |>
+  select(term, contrast, estimate, conf.low, conf.high, p.value) |>
+  mutate(estimate_pct = paste0(round(estimate * 100, 2), "%")) |>
+  select(term, contrast, estimate_pct, conf.low, conf.high, p.value) |>
+  rename(
+   "Predictor" = term,
+   "Contraste" = contrast,
+    "Efecto (pp)" = estimate_pct,
+    "IC Inferior" = conf.low,
+    "IC Superior" = conf.high,
+    "Valor p" = p.value) |>
+  knitr::kable(digits = 4, caption = "Efectos Marginales Promedio (AME)") |>
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed"),
+    full_width = FALSE,
+    position = "center")
+```
+
+Los efectos marginales más destacados del Modelo 2 son: marital_status, es el predictor más fuerte. Estar casado/a aumenta en promedio 38.8 puntos porcentuales la probabilidad de tener ingresos altos respecto a estar soltero/a. education_num muestra que cada año adicional de educación aumenta en promedio 5.1 puntos porcentuales la probabilidad de ingresos altos. workclass (Federal-gov vs. Private) que trabajar en el gobierno federal aumenta en promedio 7.9 puntos porcentuales la probabilidad respecto al sector privado. sex demuestra que ser hombre aumenta en promedio 2.2 puntos porcentuales la probabilidad de ingresos altos. Y, por ultimo, age y hours_per_week, efectos pequeños pero significativos de 0.47 y 0.46 puntos porcentuales respectivamente. En cambio los otros dos tipos de workclass restantes no los mencionamos porque su p-valor es mayor a 0.05, lo q quiere decir que no son significativos y no podemos afirmar con confianza que sean distintos de cero.
+
+**Forest Plot**
